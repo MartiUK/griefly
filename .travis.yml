@@ -1,33 +1,55 @@
-language: cpp
-sudo: required
-dist: trusty
+matrix:
+  include:
+    - os: linux
+      sudo: required
+      dist: trusty
+    - os: osx
+      sudo: required
+      osx_image: xcode9.2
+
+language: cpp 
+
 compiler: gcc
+
+services:
+  - docker
+
 before_install:
-  - export CXX="g++-4.9"
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+    docker pull kremius/griefly-build;
+    fi
+  
 install:
-  - eval "$(gimme 1.6)"
-  - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-  - sudo add-apt-repository -y ppa:george-edison55/cmake-3.x
-  - sudo apt-get update -qq
-  - sudo apt-get install -y g++-4.9
-  - sudo apt-get install -y libsfml-dev
-  - sudo apt-get install -y zlib1g-dev libpng-dev lcov
-  - sudo apt-get install -y qtbase5-dev
-  - sudo apt-get install -y cmake
-  - gem install coveralls-lcov
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+    brew update;
+    brew install gimme;
+    eval "$(gimme 1.9)";
+    brew install qt;
+    brew upgrade python;
+    brew info qt;
+    brew info python;
+    export PATH="/usr/local/opt/qt/bin:$PATH";
+    export LDFLAGS="-L/usr/local/opt/qt/lib";
+    export CPPFLAGS="-I/usr/local/opt/qt/include";
+    fi
+    
 before_script:
   - "export DISPLAY=:99.0"
-  - "sh -e /etc/init.d/xvfb start"
-  - sleep 3
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then ( sudo Xvfb :99 -ac -screen 0 1024x768x8; echo ok )& fi
+  
 script:
-  - ./make.sh -DBUILD_TESTS=ON -DBUILD_COVER=ON -DCMAKE_BUILD_TYPE=Debug
-  - cd Exec
-  - ./KVEngine --run-tests
-after_success:
-  - cd ${TRAVIS_BUILD_DIR}
-  - lcov -c -d . -o coverage.info
-  - lcov --remove coverage.info '/usr/*' --output-file coverage.info # filter out system code
-  - lcov --remove coverage.info 'Tests/*' --output-file coverage.info # remove tests from coverage
-  - lcov --remove coverage.info '/griefly/build/*' --output-file coverage.info # remove gtest and generated code from coverage
-  - lcov --list coverage.info # debug before upload
-  - coveralls-lcov --repo-token=${COVERALLS_TOKEN} coverage.info # uploads to cov
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+    ./make.sh -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug -DPYTHON_EXECUTABLE:FILEPATH=/usr/local/bin/python3;
+    cd exec;
+    ./KVEngineTests;
+    fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+    docker run -v $TRAVIS_BUILD_DIR:/app
+    -e TRAVIS
+    -e TRAVIS_REPO_SLUG
+    -e TRAVIS_JOB_ID
+    -e TRAVIS_PULL_REQUEST
+    -e TRAVIS_BRANCH
+    -e COVERALLS_TOKEN
+    kremius/griefly-build /app/build-in-docker.sh;
+    fi
